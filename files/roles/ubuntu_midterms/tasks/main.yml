@@ -1,0 +1,260 @@
+---
+- name: nagios libraries and dependencies (Ubuntu)
+  tags: ubuntu, dependencies, libraries
+  apt:
+    name:
+      - autoconf
+      - libc6
+      - gcc
+      - make
+      - wget
+      - unzip
+      - apache2
+      - php
+      - libapache2-mod-php
+      - libgd-dev
+      - openssl
+      - libssl-dev
+      - bc
+      - gawk
+      - dc
+      - build-essential
+      - snmp
+      - libnet-snmp-perl
+      - gettext
+      - python3
+      - python3-pip
+    state: latest
+
+- name: passlib package
+  pip:
+    name: passlib
+
+- name: nagios directory PATH
+  file:
+    path: ~/nagios
+    state: directory
+
+- name: downloading nagios
+  unarchive:
+    src: https://github.com/NagiosEnterprises/nagioscore/archive/nagios-4.4.6.tar.gz
+    dest: ~/nagios
+    remote_src: yes
+    mode: 0777
+    owner: root
+    group: root
+
+- name: downloading nagios plugins
+  unarchive:
+    src: https://github.com/nagios-plugins/nagios-plugins/archive/release-2.3.3.tar.gz
+    dest: ~/nagios
+    remote_src: yes
+    mode: 0777
+    owner: root
+    group: root
+
+- name: install, compile, adding users and groups
+  shell: |
+    cd ~/nagios/nagioscore-*
+    sudo ./configure --with-httpd-conf=/etc/apache2/sites-enabled
+    sudo make all
+    sudo make install-groups-users
+    sudo usermod -a -G nagios www-data
+    sudo make install
+    sudo make install-daemoninit
+    sudo make install-commandmode
+    sudo make install-config
+    sudo make install-webconf
+    sudo a2enmod rewrite
+    sudo a2enmod cgi
+
+- name: compile and install plugins
+  shell: |
+    cd ~/nagios/nagios-plugins*
+    ./tools/setup
+    ./configure
+    make
+    make install
+
+- name: adding users to nagios
+  community.general.htpasswd:
+    path: /usr/local/nagios/etc/htpasswd.users
+    name: josephferrer
+    password: josephferrer20
+
+- name: Nagios Start/Enable Check
+  service:
+    name: nagios
+    state: restarted
+    enabled: true
+
+- name: Apache/httpd Start/Enable check
+  service:
+    name: apache2
+    state: restarted
+    enabled: true
+
+- name: Install prerequisites
+  apt:
+    name:
+      - default-jre
+      - apt-transport-https
+      - curl
+      - software-properties-common
+    state: present
+  become: yes
+
+- name: Add Elasticsearch APT repository key
+  apt_key:
+    url: https://artifacts.elastic.co/GPG-KEY-elasticsearch
+  become: yes
+
+- name: Add Elasticsearch APT repository
+  apt_repository:
+    repo: "deb https://artifacts.elastic.co/packages/7.x/apt stable main"
+    state: present
+  become: yes
+
+- name: Install Elasticsearch
+  apt:
+    name: elasticsearch
+    state: present
+  become: yes
+
+- name: Enable and start Elasticsearch service
+  systemd:
+    name: elasticsearch
+    enabled: yes
+    state: started
+  become: yes
+
+- name: Install Kibana
+  apt:
+    name: kibana
+    state: present
+  become: yes
+
+- name: Enable and start Kibana service
+  systemd:
+    name: kibana
+    enabled: yes
+    state: started
+  become: yes
+
+- name: Install Logstash
+  apt:
+    name: logstash
+    state: present
+  become: yes
+
+- name: Enable and start Logstash service
+  systemd:
+    name: logstash
+    enabled: yes
+    state: started
+  become: yes
+
+- name: Restart Elasticsearch and Kibana
+  systemd:
+    name: "{{ item }}"
+    state: restarted
+  loop:
+    - elasticsearch
+    - kibana
+
+- name: Making Directory for download files
+  file:
+    path: ~/prometheus
+    state: directory
+
+- name: Download/Extract Prometheus Files
+  unarchive:
+    src: https://github.com/prometheus/prometheus/releases/download/v2.39.1/prometheus-2.39.1.linux-amd64.tar.gz
+    dest: ~/prometheus
+    remote_src: yes
+    mode: 0777
+    owner: root
+    group: root
+
+- name: Prometheus executables files added
+  shell: |
+    systemctl stop prometheus
+    cd ~/prometheus/prometheus*
+    cp -r . /usr/local/bin/prometheus
+
+- name: Prometheus service file copy
+  copy:
+    src: prometheus.service
+    dest: /etc/systemd/system
+    mode: 777
+    owner: root
+    group: root
+
+- name: Verifying the Prometheus
+  service:
+    name: prometheus
+    state: restarted
+    enabled: true
+
+- name: Installing dependencies 
+  apt:
+    name:  
+      - apt-transport-https
+      - software-properties-common 
+      - wget
+    state: latest
+
+- name: Adding Influxdb in the repository
+  shell: |
+    wget -q https://repos.influxdata.com/influxdb.key
+    sleep 5
+    echo '23a1c8836f0afc5ed24e0486339d7cc8f6790b83886c4c96995b88a061c5bb5d influxdb.key' | sha256sum -c && cat influxdb.key | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/influxdb.gpg > /dev/null
+    sleep 5
+    echo 'deb [signed-by=/etc/apt/trusted.gpg.d/influxdb.gpg] https://repos.influxdata.com/debian stable main' | sudo tee /etc/apt/sources.list.d/influxdata.list
+
+- name: Installing Influxdb
+  apt:
+    name:
+      - influxdb
+
+- name: Making sure that the Influxdb is enabled and started
+  service:
+    name: influxdb
+    state: started
+    enabled: true
+
+- name: Adding Grafana Repo
+  shell: |
+    sudo wget -q -O /usr/share/keyrings/grafana.key https://packages.grafana.com/gpg.key
+
+- name: Updating the repo and isntalling grafana
+  apt:
+    name:
+      - grafana
+
+- name: Reloading the daemon
+  shell: |
+    sudo systemctl daemon-reload
+
+- name: Making sure that the Grafana server is started and enabled
+  service:
+    name: grafana-server
+    state: restarted
+    enabled: true
+
+- name: Installing LAMP Stack
+  apt:
+    name:
+      - apache2
+      - mysql-server
+      - php 
+      - libapache2-mod-php 
+      - php-mysql
+    state: latest 
+
+- name: Starting the LAMP STACK services
+  service:
+    name: apache2
+    state: started
+    enabled: true
+

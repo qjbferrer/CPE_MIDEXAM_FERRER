@@ -1,0 +1,26 @@
+---
+- hosts: all
+  become: true
+  pre_tasks:
+
+    - name: dnf and epel installation
+      yum:
+        name: 
+          - epel-release
+          - dnf
+      when: ansible_distribution == "CentOS"
+
+    - name: dpkg in ubuntu
+      shell: |
+        dpkg --configure -a
+      when: ansible_distribution == "Ubuntu"
+
+- hosts: ubuntu_midterms
+  become: true
+  roles:
+    - ubuntu_midterms
+
+- hosts: centos_midterms
+  become: true
+  roles:
+    - centos_midterms
